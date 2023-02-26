@@ -4,20 +4,26 @@ use crossbeam_channel::Receiver;
 use crossbeam_channel::Sender;
 
 pub struct Manzana {
-    kbd: Receiver<Tecla>,
-    dsp: Sender<Tecla>,
+    keyboard_in: Receiver<Tecla>,
+    display_out: Sender<Tecla>,
 }
 
 impl Manzana {
-    pub fn new(kbd: Receiver<Tecla>, dsp: Sender<Tecla>) -> Self {
-        Self { kbd, dsp }
+    pub fn new(keyboard_in: Receiver<Tecla>, display_out: Sender<Tecla>) -> Self {
+        Self {
+            keyboard_in,
+            display_out,
+        }
     }
 
     pub fn run(&mut self) {
-        let Self { kbd, dsp } = self;
+        let Self {
+            keyboard_in,
+            display_out,
+        } = self;
         loop {
-            if let Ok(x) = kbd.recv() {
-                dsp.send(x).ok();
+            if let Ok(x) = keyboard_in.recv() {
+                display_out.send(x).ok();
                 if x == Tecla::PowerOff {
                     break;
                 }
