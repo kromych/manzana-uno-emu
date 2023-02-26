@@ -1,7 +1,9 @@
 use crossterm::cursor::MoveTo;
+use crossterm::cursor::MoveToNextLine;
 use crossterm::event::Event;
 use crossterm::event::KeyCode;
 use crossterm::event::KeyEvent;
+use crossterm::style::Print;
 use crossterm::terminal::Clear;
 use crossterm::terminal::ClearType;
 use crossterm::terminal::EnterAlternateScreen;
@@ -9,9 +11,6 @@ use crossterm::terminal::LeaveAlternateScreen;
 
 use crossbeam_channel::Receiver;
 use crossbeam_channel::Sender;
-
-use crossterm::cursor::MoveToNextLine;
-use crossterm::style::Print;
 
 /*
 KBD             .EQ     $D010           PIA.A keyboard input
@@ -35,10 +34,10 @@ fn to_apple1_char_code(c: char) -> Tecla {
     }
 
     let code = match c as u8 {
-        0x00..=0x1f => '@' as u8,
+        0x00..=0x1f => b'@',
         0x20..=0x3f => c as u8,
-        0x40..=0x5f => (c as u8 - 0x40) as u8,
-        0x60..=0xff => '_' as u8,
+        0x40..=0x5f => c as u8 - 0x40,
+        0x60..=0xff => b'_',
     };
 
     Tecla::Char(code)
@@ -59,12 +58,12 @@ fn from_apple1_key(t: Tecla) -> char {
 pub enum Tecla {
     /// Symbol key with the Apple 1 character code:
     ///
-    ///     0 	1 	2 	3 	4 	5 	6 	7 	8 	9 	A 	B 	C 	D 	E 	F
+    ///     0   1   2   3   4   5   6   7   8   9   A   B   C   D   E   F
     /// -----------------------------------------------------------------
-    /// 0x  @ 	A 	B 	C 	D 	E 	F 	G 	H 	I 	J 	K 	L 	M 	N 	O
-    /// 1x  P 	Q 	R 	S 	T 	U 	V 	W 	X 	Y 	Z 	[ 	\ 	] 	^ 	_
-    /// 2x   	! 	" 	# 	$ 	% 	& 	' 	( 	) 	* 	+ 	, 	- 	. 	/
-    /// 3x  0 	1 	2 	3 	4 	5 	6 	7 	8 	9 	: 	; 	< 	= 	> 	?
+    /// 0x  @   A   B   C   D   E   F   G   H   I   J   K   L   M   N   O
+    /// 1x  P   Q   R   S   T   U   V   W   X   Y   Z   [   \   ]   ^   _
+    /// 2x      !   "   #   $   %   &   '   (   )   *   +   ,   -   .   /
+    /// 3x  0   1   2   3   4   5   6   7   8   9   :   ;   <   =   >   ?
     Char(u8),
     /// The Enter key
     Enter,
