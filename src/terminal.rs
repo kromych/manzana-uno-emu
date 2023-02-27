@@ -138,8 +138,8 @@ impl Display {
 
 impl Drop for Display {
     fn drop(&mut self) {
-        crossterm::execute!(std::io::stdout(), LeaveAlternateScreen).ok();
         crossterm::terminal::disable_raw_mode().ok();
+        crossterm::execute!(std::io::stdout(), LeaveAlternateScreen).ok();
     }
 }
 
