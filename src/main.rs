@@ -7,12 +7,13 @@ fn main() -> anyhow::Result<()> {
 
     let mut display = terminal::Display::new(display_in)?;
     let mut keyboard = terminal::Keyboard::new(keyboard_out);
-    let mut manzana = manzana::Manzana::new(keyboard_in, display_out);
 
     std::thread::spawn(move || keyboard.run());
     std::thread::spawn(move || display.run());
 
-    manzana.run();
+    let (poweroff_out, poweroff_in) = manzana::poweroff();
+    let mut manzana = manzana::Manzana::new(keyboard_in, display_out, poweroff_in, poweroff_out);
+    manzana.run()?;
 
     Ok(())
 }

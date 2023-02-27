@@ -12,21 +12,6 @@ use crossterm::terminal::LeaveAlternateScreen;
 use crossbeam_channel::Receiver;
 use crossbeam_channel::Sender;
 
-/*
-KBD             .EQ     $D010           PIA.A keyboard input
-KBDCR           .EQ     $D011           PIA.A keyboard control register
-DSP             .EQ     $D012           PIA.B display output register
-DSPCR           .EQ     $D013           PIA.B display control register
-
-; KBD b7..b0 are inputs, b6..b0 is ASCII input, b7 is constant high
-;     Programmed to respond to low to high KBD strobe
-; DSP b6..b0 are outputs, b7 is input
-;     CB2 goes low when data is written, returns high when CB1 goes high
-; Interrupts are enabled, though not used. KBD can be jumpered to IRQ,
-; whereas DSP can be jumpered to NMI.
-
-*/
-
 fn to_apple1_char_code(c: char) -> Tecla {
     let mut c = c;
     if c.is_ascii() {
