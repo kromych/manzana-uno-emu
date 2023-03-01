@@ -62,11 +62,11 @@ impl yamos6502::Memory for Board {
     }
 
     fn read(&self, addr: u16) -> Result<u8, MemoryError> {
-        match addr {
+        let data = match addr {
             KBD => {
                 let t = self.keyboard_in.recv().unwrap();
                 match t {
-                    Tecla::Char(c) => Ok(c | 0b1000_0000),
+                    Tecla::Char(c) => c | 0b1000_0000,
                     Tecla::Enter => todo!(),
                     Tecla::Esc => todo!(),
                     Tecla::ClearScreen => todo!(),
@@ -74,13 +74,11 @@ impl yamos6502::Memory for Board {
                     Tecla::PowerOff => todo!(),
                 }
             }
-            KBDCR => {
-                // Indicate that the key is ready to make the code
-                // wait on the keypress
-                Ok(0b0010_0111)
-            }
-            _ => Ok(self.bytes[addr as usize]),
-        }
+            KBDCR => self.bytes[addr as usize] | ((self.keyboard_in.is_empty() as u8) << 7),
+            _ => self.bytes[addr as usize],
+        };
+
+        Ok(data)
     }
 }
 
