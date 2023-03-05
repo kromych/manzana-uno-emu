@@ -1,16 +1,14 @@
-use crossterm::cursor::MoveTo;
 use crossterm::cursor::MoveToNextLine;
 use crossterm::event::Event;
 use crossterm::event::KeyCode;
 use crossterm::event::KeyEvent;
 use crossterm::style::Print;
-use crossterm::terminal::Clear;
-use crossterm::terminal::ClearType;
 use crossterm::terminal::EnterAlternateScreen;
 use crossterm::terminal::LeaveAlternateScreen;
 
 use crossbeam_channel::Receiver;
 use crossbeam_channel::Sender;
+use crossterm::terminal::ScrollUp;
 
 const KEYBOARD_BUFFER_SIZE: usize = 1024;
 const DISPLAY_BUFFER_SIZE: usize = 1024;
@@ -24,6 +22,7 @@ const ESC: u8 = 0x9b;
 /// The 40 x 24 display
 pub struct Display {
     line_len: u8,
+    line_no: u16,
     port_in: Receiver<Tecla>,
 }
 
@@ -40,6 +39,7 @@ impl Display {
 
         Ok(Self {
             line_len: 0,
+            line_no: 0,
             port_in,
         })
     }
@@ -47,11 +47,12 @@ impl Display {
     fn new_line(&mut self) {
         crossterm::execute!(std::io::stdout(), MoveToNextLine(1)).ok();
         self.line_len = 0;
-    }
-
-    fn _clear_screen(&mut self) {
-        crossterm::execute!(std::io::stdout(), Clear(ClearType::All), MoveTo(0, 0)).ok();
-        self.line_len = 0;
+        self.line_no += 1;
+        if let Ok((_cols, rows)) = crossterm::terminal::size() {
+            if self.line_no >= rows {
+                crossterm::execute!(std::io::stdout(), ScrollUp(1)).ok();
+            }
+        }
     }
 
     fn print_char(&mut self, c: char) {
@@ -67,12 +68,11 @@ impl Display {
             if let Ok(x) = self.port_in.recv() {
                 match x {
                     Tecla::Char(x) => {
-                        if x & 0b1000_0000 != 0 {
-                            match x {
-                                0xa0..=0xdf => self.print_char((x & 0b0111_1111) as char),
-                                CR => self.new_line(),
-                                _ => {}
-                            }
+                        let x = x & 0b0111_1111;
+                        match x {
+                            0x20..=0x6f => self.print_char(x as char),
+                            0x0d => self.new_line(),
+                            _ => {}
                         }
                     }
                     Tecla::PowerOff => break,
