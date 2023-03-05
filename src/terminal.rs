@@ -24,17 +24,23 @@ const ESC: u8 = 0x9b;
 /// The 40 x 24 display
 pub struct Display {
     line_len: u8,
-    display_in: Receiver<u8>,
+    port_in: Receiver<Tecla>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Tecla {
+    Char(u8),
+    PowerOff,
 }
 
 impl Display {
-    pub fn new(display_in: Receiver<u8>) -> anyhow::Result<Self> {
+    pub fn new(port_in: Receiver<Tecla>) -> anyhow::Result<Self> {
         crossterm::execute!(std::io::stdout(), EnterAlternateScreen)?;
         crossterm::terminal::enable_raw_mode()?;
 
         Ok(Self {
             line_len: 0,
-            display_in,
+            port_in,
         })
     }
 
@@ -43,7 +49,7 @@ impl Display {
         self.line_len = 0;
     }
 
-    fn clear_screen(&mut self) {
+    fn _clear_screen(&mut self) {
         crossterm::execute!(std::io::stdout(), Clear(ClearType::All), MoveTo(0, 0)).ok();
         self.line_len = 0;
     }
@@ -58,13 +64,18 @@ impl Display {
             if self.line_len == DISPLAY_LINE_LENGTH {
                 self.new_line();
             }
-            if let Ok(x) = self.display_in.recv() {
-                if x & 0b1000_0000 != 0 {
-                    match x {
-                        0xa0..=0xdf => self.print_char((x & 0b0111_1111) as char),
-                        CR => self.new_line(),
-                        _ => {}
+            if let Ok(x) = self.port_in.recv() {
+                match x {
+                    Tecla::Char(x) => {
+                        if x & 0b1000_0000 != 0 {
+                            match x {
+                                0xa0..=0xdf => self.print_char((x & 0b0111_1111) as char),
+                                CR => self.new_line(),
+                                _ => {}
+                            }
+                        }
                     }
+                    Tecla::PowerOff => break,
                 }
             }
         }
@@ -78,17 +89,20 @@ impl Drop for Display {
     }
 }
 
+pub fn display_ports() -> (Sender<Tecla>, Receiver<Tecla>) {
+    crossbeam_channel::bounded(DISPLAY_BUFFER_SIZE)
+}
+
 pub struct Keyboard {
-    keyboard_out: Sender<u8>,
+    port_out: Sender<Tecla>,
 }
 
 impl Keyboard {
-    pub fn new(keyboard_out: Sender<u8>) -> Self {
-        Self { keyboard_out }
+    pub fn new(port_out: Sender<Tecla>) -> Self {
+        Self { port_out }
     }
 
     pub fn run(&mut self) {
-        let Self { keyboard_out } = self;
         loop {
             match crossterm::event::read().ok() {
                 Some(Event::Key(KeyEvent {
@@ -100,24 +114,30 @@ impl Keyboard {
                     }
 
                     let c = c as u8;
-                    keyboard_out.send(c | 0b1000_0000).ok();
+                    self.port_out.send(Tecla::Char(c | 0b1000_0000)).ok();
                 }
                 Some(Event::Key(KeyEvent {
                     code: KeyCode::Enter,
                     ..
                 })) => {
-                    keyboard_out.send(CR).ok();
+                    self.port_out.send(Tecla::Char(CR)).ok();
                 }
                 Some(Event::Key(KeyEvent {
                     code: KeyCode::Esc, ..
                 })) => {
-                    keyboard_out.send(ESC).ok();
+                    self.port_out.send(Tecla::Char(ESC)).ok();
                 }
                 Some(Event::Key(KeyEvent {
                     code: KeyCode::Backspace,
                     ..
                 })) => {
-                    keyboard_out.send(BS).ok();
+                    self.port_out.send(Tecla::Char(BS)).ok();
+                }
+                Some(Event::Key(KeyEvent {
+                    code: KeyCode::End, ..
+                })) => {
+                    self.port_out.send(Tecla::PowerOff).ok();
+                    break;
                 }
                 _ => {}
             }
@@ -125,10 +145,6 @@ impl Keyboard {
     }
 }
 
-pub fn keyboard_ports() -> (Sender<u8>, Receiver<u8>) {
-    crossbeam_channel::bounded::<u8>(KEYBOARD_BUFFER_SIZE)
-}
-
-pub fn display_ports() -> (Sender<u8>, Receiver<u8>) {
-    crossbeam_channel::bounded::<u8>(DISPLAY_BUFFER_SIZE)
+pub fn keyboard_ports() -> (Sender<Tecla>, Receiver<Tecla>) {
+    crossbeam_channel::bounded(KEYBOARD_BUFFER_SIZE)
 }

@@ -7,5 +7,9 @@ edition = "2021"
 yamos6502 = { path = "../yamos6502" }
 
 anyhow = "1"
+clap = { version = "4", features = ["derive"] }
+clap-num = "1"
 crossterm = "0.26"
 crossbeam-channel = "0.5"
+tracing ="0.1"
+tracing-subscriber = "0.3"

@@ -1,6 +1,7 @@
 use crossbeam_channel::Receiver;
 use crossbeam_channel::Sender;
 
+use crate::terminal::Tecla;
 use yamos6502::MemoryError;
 use yamos6502::MAX_MEMORY_SIZE;
 
@@ -13,20 +14,22 @@ const KBD: u16 = 0xd010;
 const KBDCR: u16 = 0xd011;
 // PIA.B display output register
 const DSP: u16 = 0xd012;
+// PIA.B display output register alternative address
+// that works due to incomplete decoding
+const DSP_ALT: u16 = 0xd0f2;
 // PIA.B display control register
 const DSPCR: u16 = 0xd013;
 
-const INIT_MEMORY_VALUE: u8 = 0xff;
 const INIT_STACK_POINTER: u8 = 0xfd;
 const ROM_START: u16 = 0xff00;
 
-const WOZMON: &[u8] = include_bytes!("wozmon.bin");
+const WOZMON: &[u8] = include_bytes!("../roms/wozmon.bin");
 
 pub struct Board {
-    keyboard_in: Receiver<u8>,
-    display_out: Sender<u8>,
-    poweroff_out: Sender<()>,
-    bytes: [u8; MAX_MEMORY_SIZE],
+    keyboard_in: Receiver<Tecla>,
+    display_out: Sender<Tecla>,
+    power_off_out: Sender<()>,
+    bytes: Vec<u8>,
     rom_start: u16,
 }
 
@@ -38,8 +41,8 @@ impl yamos6502::Memory for Board {
 
         let mut value = value;
         match addr {
-            DSP => {
-                self.display_out.send(value).ok();
+            DSP | DSP_ALT => {
+                self.display_out.send(Tecla::Char(value)).ok();
                 // Clear the bit 7 to indicate that the operation completed
                 value &= 0b0111_1111;
             }
@@ -52,19 +55,45 @@ impl yamos6502::Memory for Board {
         }
         self.bytes[addr as usize] = value;
 
+        tracing::trace!("Wrote {value:02x} at {addr:04x}");
+
         Ok(())
     }
 
     fn read(&mut self, addr: u16) -> Result<u8, MemoryError> {
-        let data = match addr {
-            KBD => {
-                let data = self.keyboard_in.recv().unwrap();
+        let mut update_kbd_cr = || {
+            if self.keyboard_in.is_empty() {
                 self.bytes[KBDCR as usize] &= 0b0111_1111;
-                data
+            } else {
+                self.bytes[KBDCR as usize] |= 0b1000_0000;
             }
-            KBDCR => self.bytes[addr as usize] | ((self.keyboard_in.is_empty() as u8) << 7),
-            _ => self.bytes[addr as usize],
         };
+
+        match addr {
+            KBD => {
+                if let Ok(tecla) = self.keyboard_in.recv() {
+                    update_kbd_cr();
+
+                    match tecla {
+                        Tecla::Char(data) => {
+                            self.bytes[addr as usize] = data;
+                        }
+                        Tecla::PowerOff => {
+                            self.power_off_out.send(()).ok();
+                            self.display_out.send(tecla).ok();
+                        }
+                    }
+                }
+            }
+            KBDCR => {
+                update_kbd_cr();
+            }
+            _ => {}
+        };
+
+        let data = self.bytes[addr as usize];
+
+        tracing::trace!("Read {data:02x} at {addr:04x}");
 
         Ok(data)
     }
@@ -72,57 +101,73 @@ impl yamos6502::Memory for Board {
 
 impl Board {
     pub fn new(
-        keyboard_in: Receiver<u8>,
-        display_out: Sender<u8>,
-        poweroff_out: Sender<()>,
+        keyboard_in: Receiver<Tecla>,
+        display_out: Sender<Tecla>,
+        power_off_out: Sender<()>,
+        mut bytes: Vec<u8>,
     ) -> Self {
-        let mut bytes = [INIT_MEMORY_VALUE; MAX_MEMORY_SIZE];
-        bytes[ROM_START as usize..].copy_from_slice(WOZMON);
+        assert!(bytes.len() == MAX_MEMORY_SIZE);
+
+        {
+            let bytes = bytes.as_mut_slice();
+            bytes[ROM_START as usize..].copy_from_slice(WOZMON);
+
+            bytes[KBD as usize] = 0;
+            bytes[KBDCR as usize] = 0;
+            bytes[DSP as usize] = 0;
+            bytes[DSP_ALT as usize] = 0;
+            bytes[DSPCR as usize] = 0;
+        }
 
         Self {
             keyboard_in,
             display_out,
-            poweroff_out,
             bytes,
             rom_start: ROM_START,
+            power_off_out,
         }
     }
 }
 
 pub struct Manzana {
-    poweroff_in: Receiver<()>,
     cpu: yamos6502::Mos6502<Board>,
+    power_off_in: Receiver<()>,
 }
 
 impl Manzana {
-    pub fn new(
-        keyboard_in: Receiver<u8>,
-        display_out: Sender<u8>,
-        poweroff_in: Receiver<()>,
-        poweroff_out: Sender<()>,
-    ) -> Self {
-        let board = Board::new(keyboard_in, display_out, poweroff_out);
-        let cpu = yamos6502::Mos6502::new(board, yamos6502::StackWraparound::Disallow);
+    pub fn new(keyboard_in: Receiver<Tecla>, display_out: Sender<Tecla>, bytes: Vec<u8>) -> Self {
+        let (power_off_out, power_off_in) = crossbeam_channel::bounded(1);
+        let board = Board::new(keyboard_in, display_out, power_off_out, bytes);
+        let cpu = yamos6502::Mos6502::new(board, yamos6502::StackWraparound::Allow);
 
-        Self { poweroff_in, cpu }
+        Self { cpu, power_off_in }
     }
 
     pub fn run(&mut self) -> anyhow::Result<()> {
-        let Self { cpu, poweroff_in } = self;
+        let Self { cpu, power_off_in } = self;
 
         cpu.set_reset_pending();
         *cpu.registers_mut().reg_mut(yamos6502::Register::S) = INIT_STACK_POINTER;
+        let mut instr_emulated = 0;
+
+        tracing::info!("Running Apple I emulator");
         loop {
-            cpu.run()?;
-            if poweroff_in.try_recv().is_ok() {
+            let run_exit = cpu.run()?;
+            tracing::debug!("Run exit {:x?}, registers {:x?}", run_exit, cpu.registers());
+
+            if power_off_in.is_full() {
                 break;
+            }
+
+            // Very arbitrary
+            instr_emulated += 1;
+            if instr_emulated & 0xf == 0 {
+                std::thread::sleep(std::time::Duration::from_millis(2));
             }
         }
 
+        tracing::info!("Instruction emulated: {instr_emulated}");
+
         Ok(())
     }
-}
-
-pub fn poweroff() -> (Sender<()>, Receiver<()>) {
-    crossbeam_channel::bounded::<()>(0)
 }

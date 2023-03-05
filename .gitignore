@@ -1,4 +1,7 @@
+/.vscode
+/.idea
 /target
+/roms
+*.bin
 .DS_Store
-.vscode/
-.idea
+*.log
