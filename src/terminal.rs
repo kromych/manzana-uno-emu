@@ -5,10 +5,10 @@ use crossterm::event::KeyEvent;
 use crossterm::style::Print;
 use crossterm::terminal::EnterAlternateScreen;
 use crossterm::terminal::LeaveAlternateScreen;
+use crossterm::terminal::ScrollUp;
 
 use crossbeam_channel::Receiver;
 use crossbeam_channel::Sender;
-use crossterm::terminal::ScrollUp;
 
 const KEYBOARD_BUFFER_SIZE: usize = 1024;
 const DISPLAY_BUFFER_SIZE: usize = 1024;
