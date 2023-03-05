@@ -1,5 +1,3 @@
-use crate::terminal::Tecla;
-
 use crossbeam_channel::Receiver;
 use crossbeam_channel::Sender;
 
@@ -18,10 +16,6 @@ const DSP: u16 = 0xd012;
 // PIA.B display control register
 const DSPCR: u16 = 0xd013;
 
-const BS: u8 = 0xDF;
-const CR: u8 = 0x8D;
-const ESC: u8 = 0x9B;
-
 const INIT_MEMORY_VALUE: u8 = 0xff;
 const INIT_STACK_POINTER: u8 = 0xfd;
 const ROM_START: u16 = 0xff00;
@@ -29,8 +23,8 @@ const ROM_START: u16 = 0xff00;
 const WOZMON: &[u8] = include_bytes!("wozmon.bin");
 
 pub struct Board {
-    keyboard_in: Receiver<Tecla>,
-    display_out: Sender<Tecla>,
+    keyboard_in: Receiver<u8>,
+    display_out: Sender<u8>,
     poweroff_out: Sender<()>,
     bytes: [u8; MAX_MEMORY_SIZE],
     rom_start: u16,
@@ -45,7 +39,7 @@ impl yamos6502::Memory for Board {
         let mut value = value;
         match addr {
             DSP => {
-                self.display_out.send(Tecla::Char(value & 0b0111_1111)).ok();
+                self.display_out.send(value).ok();
                 // Clear the bit 7 to indicate that the operation completed
                 value &= 0b0111_1111;
             }
@@ -61,18 +55,12 @@ impl yamos6502::Memory for Board {
         Ok(())
     }
 
-    fn read(&self, addr: u16) -> Result<u8, MemoryError> {
+    fn read(&mut self, addr: u16) -> Result<u8, MemoryError> {
         let data = match addr {
             KBD => {
-                let t = self.keyboard_in.recv().unwrap();
-                match t {
-                    Tecla::Char(c) => c | 0b1000_0000,
-                    Tecla::Enter => todo!(),
-                    Tecla::Esc => todo!(),
-                    Tecla::ClearScreen => todo!(),
-                    Tecla::Reset => todo!(),
-                    Tecla::PowerOff => todo!(),
-                }
+                let data = self.keyboard_in.recv().unwrap();
+                self.bytes[KBDCR as usize] &= 0b0111_1111;
+                data
             }
             KBDCR => self.bytes[addr as usize] | ((self.keyboard_in.is_empty() as u8) << 7),
             _ => self.bytes[addr as usize],
@@ -84,8 +72,8 @@ impl yamos6502::Memory for Board {
 
 impl Board {
     pub fn new(
-        keyboard_in: Receiver<Tecla>,
-        display_out: Sender<Tecla>,
+        keyboard_in: Receiver<u8>,
+        display_out: Sender<u8>,
         poweroff_out: Sender<()>,
     ) -> Self {
         let mut bytes = [INIT_MEMORY_VALUE; MAX_MEMORY_SIZE];
@@ -108,8 +96,8 @@ pub struct Manzana {
 
 impl Manzana {
     pub fn new(
-        keyboard_in: Receiver<Tecla>,
-        display_out: Sender<Tecla>,
+        keyboard_in: Receiver<u8>,
+        display_out: Sender<u8>,
         poweroff_in: Receiver<()>,
         poweroff_out: Sender<()>,
     ) -> Self {

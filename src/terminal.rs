@@ -12,69 +12,23 @@ use crossterm::terminal::LeaveAlternateScreen;
 use crossbeam_channel::Receiver;
 use crossbeam_channel::Sender;
 
-fn to_apple1_char_code(c: char) -> Tecla {
-    let mut c = c;
-    if c.is_ascii() {
-        c.make_ascii_uppercase();
-    }
-
-    let code = match c as u8 {
-        0x00..=0x1f => b'@',
-        0x20..=0x3f => c as u8,
-        0x40..=0x5f => c as u8 - 0x40,
-        0x60..=0xff => b'_',
-    };
-
-    Tecla::Char(code)
-}
-
-fn from_apple1_key(t: Tecla) -> char {
-    match t {
-        Tecla::Char(c) => match c {
-            0x20..=0x3f => char::from_u32(c as u32).unwrap_or('@'),
-            0x00..=0x1f => char::from_u32((c + 0x40) as u32).unwrap_or('@'),
-            _ => '@',
-        },
-        Tecla::Enter | Tecla::Esc | Tecla::ClearScreen | Tecla::Reset | Tecla::PowerOff => '@',
-    }
-}
-
-#[derive(Debug, PartialEq, Eq, Clone, Copy)]
-pub enum Tecla {
-    /// Symbol key with the Apple 1 character code:
-    ///
-    ///     0   1   2   3   4   5   6   7   8   9   A   B   C   D   E   F
-    /// -----------------------------------------------------------------
-    /// 0x  @   A   B   C   D   E   F   G   H   I   J   K   L   M   N   O
-    /// 1x  P   Q   R   S   T   U   V   W   X   Y   Z   [   \   ]   ^   _
-    /// 2x      !   "   #   $   %   &   '   (   )   *   +   ,   -   .   /
-    /// 3x  0   1   2   3   4   5   6   7   8   9   :   ;   <   =   >   ?
-    Char(u8),
-    /// The Enter key
-    Enter,
-    /// The Escape key
-    Esc,
-    /// The Clear Screen key, 'PgDn'
-    ClearScreen,
-    /// The Reset key, 'Home'
-    Reset,
-    /// The Power Off key, 'End'
-    PowerOff,
-}
-
 const KEYBOARD_BUFFER_SIZE: usize = 1024;
 const DISPLAY_BUFFER_SIZE: usize = 1024;
 
 const DISPLAY_LINE_LENGTH: u8 = 40;
 
+const BS: u8 = 0xdf;
+const CR: u8 = 0x8d;
+const ESC: u8 = 0x9b;
+
 /// The 40 x 24 display
 pub struct Display {
     line_len: u8,
-    display_in: Receiver<Tecla>,
+    display_in: Receiver<u8>,
 }
 
 impl Display {
-    pub fn new(display_in: Receiver<Tecla>) -> anyhow::Result<Self> {
+    pub fn new(display_in: Receiver<u8>) -> anyhow::Result<Self> {
         crossterm::execute!(std::io::stdout(), EnterAlternateScreen)?;
         crossterm::terminal::enable_raw_mode()?;
 
@@ -94,8 +48,8 @@ impl Display {
         self.line_len = 0;
     }
 
-    fn print_char(&mut self, x: Tecla) {
-        crossterm::execute!(std::io::stdout(), Print(from_apple1_key(x))).ok();
+    fn print_char(&mut self, c: char) {
+        crossterm::execute!(std::io::stdout(), Print(c)).ok();
         self.line_len += 1;
     }
 
@@ -105,15 +59,11 @@ impl Display {
                 self.new_line();
             }
             if let Ok(x) = self.display_in.recv() {
-                match x {
-                    Tecla::Char(_) => self.print_char(x),
-                    Tecla::Enter => self.new_line(),
-                    Tecla::Esc => {}
-                    Tecla::PowerOff => {
-                        break;
-                    }
-                    Tecla::ClearScreen | Tecla::Reset => {
-                        self.clear_screen();
+                if x & 0b1000_0000 != 0 {
+                    match x {
+                        0xa0..=0xdf => self.print_char((x & 0b0111_1111) as char),
+                        CR => self.new_line(),
+                        _ => {}
                     }
                 }
             }
@@ -129,11 +79,11 @@ impl Drop for Display {
 }
 
 pub struct Keyboard {
-    keyboard_out: Sender<Tecla>,
+    keyboard_out: Sender<u8>,
 }
 
 impl Keyboard {
-    pub fn new(keyboard_out: Sender<Tecla>) -> Self {
+    pub fn new(keyboard_out: Sender<u8>) -> Self {
         Self { keyboard_out }
     }
 
@@ -142,40 +92,32 @@ impl Keyboard {
         loop {
             match crossterm::event::read().ok() {
                 Some(Event::Key(KeyEvent {
-                    code: KeyCode::Char(c),
+                    code: KeyCode::Char(mut c),
                     ..
                 })) => {
-                    keyboard_out.send(to_apple1_char_code(c)).ok();
+                    if c.is_ascii() {
+                        c.make_ascii_uppercase();
+                    }
+
+                    let c = c as u8;
+                    keyboard_out.send(c | 0b1000_0000).ok();
                 }
                 Some(Event::Key(KeyEvent {
                     code: KeyCode::Enter,
                     ..
                 })) => {
-                    keyboard_out.send(Tecla::Enter).ok();
+                    keyboard_out.send(CR).ok();
                 }
                 Some(Event::Key(KeyEvent {
                     code: KeyCode::Esc, ..
                 })) => {
-                    keyboard_out.send(Tecla::Esc).ok();
+                    keyboard_out.send(ESC).ok();
                 }
                 Some(Event::Key(KeyEvent {
-                    code: KeyCode::PageDown,
+                    code: KeyCode::Backspace,
                     ..
                 })) => {
-                    keyboard_out.send(Tecla::ClearScreen).ok();
-                }
-                Some(Event::Key(KeyEvent {
-                    code: KeyCode::Home,
-                    ..
-                })) => {
-                    keyboard_out.send(Tecla::Reset).ok();
-                    break;
-                }
-                Some(Event::Key(KeyEvent {
-                    code: KeyCode::End, ..
-                })) => {
-                    keyboard_out.send(Tecla::PowerOff).ok();
-                    break;
+                    keyboard_out.send(BS).ok();
                 }
                 _ => {}
             }
@@ -183,10 +125,10 @@ impl Keyboard {
     }
 }
 
-pub fn keyboard_ports() -> (Sender<Tecla>, Receiver<Tecla>) {
-    crossbeam_channel::bounded::<Tecla>(KEYBOARD_BUFFER_SIZE)
+pub fn keyboard_ports() -> (Sender<u8>, Receiver<u8>) {
+    crossbeam_channel::bounded::<u8>(KEYBOARD_BUFFER_SIZE)
 }
 
-pub fn display_ports() -> (Sender<Tecla>, Receiver<Tecla>) {
-    crossbeam_channel::bounded::<Tecla>(DISPLAY_BUFFER_SIZE)
+pub fn display_ports() -> (Sender<u8>, Receiver<u8>) {
+    crossbeam_channel::bounded::<u8>(DISPLAY_BUFFER_SIZE)
 }
