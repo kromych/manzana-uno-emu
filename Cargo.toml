@@ -2,6 +2,14 @@
 name = "manzana-uno-emu"
 version = "0.1.0"
 edition = "2021"
+authors = ["kromych@github.com"]
+description = "Apple I emulator"
+homepage = "https://github.com/kromych/manzana-uno-emu"
+repository = "https://github.com/kromych/manzana-uno-emu"
+readme = "README.md"
+keywords = ["emulator", "6502", "apple1"]
+categories = ["command-line-utilities", "emulators"]
+license = "MIT"
 
 [dependencies]
 anyhow = "1"
