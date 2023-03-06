@@ -1,3 +1,4 @@
+use crossterm::cursor::MoveTo;
 use crossterm::cursor::MoveToNextLine;
 use crossterm::event::Event;
 use crossterm::event::KeyCode;
@@ -35,6 +36,7 @@ pub enum Tecla {
 impl Display {
     pub fn new(port_in: Receiver<Tecla>) -> anyhow::Result<Self> {
         crossterm::execute!(std::io::stdout(), EnterAlternateScreen)?;
+        crossterm::execute!(std::io::stdout(), MoveTo(1, 1))?;
         crossterm::terminal::enable_raw_mode()?;
 
         Ok(Self {
