@@ -24,7 +24,7 @@ Options:
           Print version
 ```
 
-The `End` key exits the emulator.
+Either of `Esc`, `Home`, `End` keys make the emulator exit.
 
 ## Examples
 
@@ -45,8 +45,10 @@ Inside the emulator, issue `E000R` to run the BASIC interpreter.
 Here is a sample program you might enter
 
 ```basic
-10 PRINT "HELLO"
-20 GOTO 10
+10 FOR I=1 TO 10
+20 PRINT "HELLO #", I
+30 NEXT I
+40 END
 ```
 
 and run it with
