@@ -166,8 +166,8 @@ impl Manzana {
 
             // Very arbitrary
             instr_emulated += 1;
-            if instr_emulated & 0xf == 0 {
-                std::thread::sleep(std::time::Duration::from_millis(2));
+            if instr_emulated & 0x1f == 0 {
+                std::thread::sleep(std::time::Duration::from_millis(1));
             }
         }
 
