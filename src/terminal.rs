@@ -18,7 +18,6 @@ const DISPLAY_LINE_LENGTH: u8 = 40;
 
 const BS: u8 = 0xdf;
 const CR: u8 = 0x8d;
-const ESC: u8 = 0x9b;
 
 /// The 40 x 24 display
 pub struct Display {
@@ -106,42 +105,46 @@ impl Keyboard {
 
     pub fn run(&mut self) {
         loop {
-            match crossterm::event::read().ok() {
-                Some(Event::Key(KeyEvent {
-                    code: KeyCode::Char(mut c),
-                    ..
-                })) => {
-                    if c.is_ascii() {
-                        c.make_ascii_uppercase();
-                    }
+            if let Ok(event) = crossterm::event::read() {
+                match event {
+                    Event::Key(KeyEvent {
+                        code: KeyCode::Char(mut c),
+                        ..
+                    }) => {
+                        if c.is_ascii() {
+                            c.make_ascii_uppercase();
+                        }
 
-                    let c = c as u8;
-                    self.port_out.send(Tecla::Char(c | 0b1000_0000)).ok();
+                        let c = c as u8;
+                        self.port_out.send(Tecla::Char(c | 0b1000_0000)).ok();
+                    }
+                    Event::Key(KeyEvent {
+                        code: KeyCode::Enter,
+                        ..
+                    }) => {
+                        self.port_out.send(Tecla::Char(CR)).ok();
+                    }
+                    Event::Key(KeyEvent {
+                        code: KeyCode::Backspace,
+                        ..
+                    }) => {
+                        self.port_out.send(Tecla::Char(BS)).ok();
+                    }
+                    Event::Key(KeyEvent {
+                        code: KeyCode::Home,
+                        ..
+                    })
+                    | Event::Key(KeyEvent {
+                        code: KeyCode::End, ..
+                    })
+                    | Event::Key(KeyEvent {
+                        code: KeyCode::Esc, ..
+                    }) => {
+                        self.port_out.send(Tecla::PowerOff).ok();
+                        break;
+                    }
+                    _ => {}
                 }
-                Some(Event::Key(KeyEvent {
-                    code: KeyCode::Enter,
-                    ..
-                })) => {
-                    self.port_out.send(Tecla::Char(CR)).ok();
-                }
-                Some(Event::Key(KeyEvent {
-                    code: KeyCode::Esc, ..
-                })) => {
-                    self.port_out.send(Tecla::Char(ESC)).ok();
-                }
-                Some(Event::Key(KeyEvent {
-                    code: KeyCode::Backspace,
-                    ..
-                })) => {
-                    self.port_out.send(Tecla::Char(BS)).ok();
-                }
-                Some(Event::Key(KeyEvent {
-                    code: KeyCode::End, ..
-                })) => {
-                    self.port_out.send(Tecla::PowerOff).ok();
-                    break;
-                }
-                _ => {}
             }
         }
     }
