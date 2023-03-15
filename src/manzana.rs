@@ -159,6 +159,11 @@ impl Manzana {
                 break;
             }
 
+            if run_exit == yamos6502::RunExit::Executed(yamos6502::Insn::BRK) {
+                // Reset on BRK
+                cpu.set_reset_pending();
+            }
+
             // Very arbitrary
             instr_emulated += 1;
             if instr_emulated & 0xf == 0 {
