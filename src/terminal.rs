@@ -10,6 +10,7 @@ use crossterm::terminal::ScrollUp;
 
 use crossbeam_channel::Receiver;
 use crossbeam_channel::Sender;
+use crossterm::event::KeyEventKind;
 
 const KEYBOARD_BUFFER_SIZE: usize = 1024;
 const DISPLAY_BUFFER_SIZE: usize = 1024;
@@ -109,6 +110,7 @@ impl Keyboard {
                 match event {
                     Event::Key(KeyEvent {
                         code: KeyCode::Char(mut c),
+                        kind: KeyEventKind::Press,
                         ..
                     }) => {
                         if c.is_ascii() {
@@ -120,25 +122,32 @@ impl Keyboard {
                     }
                     Event::Key(KeyEvent {
                         code: KeyCode::Enter,
+                        kind: KeyEventKind::Press,
                         ..
                     }) => {
                         self.port_out.send(Tecla::Char(CR)).ok();
                     }
                     Event::Key(KeyEvent {
                         code: KeyCode::Backspace,
+                        kind: KeyEventKind::Press,
                         ..
                     }) => {
                         self.port_out.send(Tecla::Char(BS)).ok();
                     }
                     Event::Key(KeyEvent {
                         code: KeyCode::Home,
+                        kind: KeyEventKind::Press,
                         ..
                     })
                     | Event::Key(KeyEvent {
-                        code: KeyCode::End, ..
+                        code: KeyCode::End,
+                        kind: KeyEventKind::Press,
+                        ..
                     })
                     | Event::Key(KeyEvent {
-                        code: KeyCode::Esc, ..
+                        code: KeyCode::Esc,
+                        kind: KeyEventKind::Press,
+                        ..
                     }) => {
                         self.port_out.send(Tecla::PowerOff).ok();
                         break;
